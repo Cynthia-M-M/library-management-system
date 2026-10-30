@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.local
+
+# Compiled output
+dist/
+*.tsbuildinfo
+
+# Prisma generated client if in custom folder
+# prisma/client
+
+# OS files
+.DS_Store
+Thumbs.db
