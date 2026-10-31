@@ -1,6 +1,6 @@
 # Library Management System
 
-A full-stack library management system with book catalog search, genre categorization, user roles, and patron reviews. Built with **NestJS**, **Prisma ORM**, and **PostgreSQL**.
+A full-stack library management system with book catalog search, genre categorization, user roles, patron reviews, and secure JWT authentication. Built with **NestJS**, **Prisma ORM**, and **PostgreSQL**.
 
 ---
 
@@ -31,21 +31,42 @@ library-management-system/
 │   ├── nest-cli.json             # NestJS CLI configuration
 │   ├── tsconfig.json             # TypeScript compiler settings
 │   ├── package.json              # API dependencies and scripts
-│   ├── .env.example              # PostgreSQL connection string template
+│   ├── .env.example              # PostgreSQL & JWT environment variable template
 │   ├── prisma/
 │   │   ├── schema.prisma         # Models: User, Role, Genre, Book, Review (Stretch)
-│   │   └── seed.ts               # Seed script (4 genres, 15 books, user & review)
+│   │   └── seed.ts               # Seed script (4 genres, 15 books, librarian & patron accounts)
 │   └── src/
-│       ├── main.ts               # Application entrypoint (bootstraps Nest on port 3000)
-│       ├── app.module.ts         # Root module coordinating PrismaModule & BooksModule
+│       ├── main.ts               # Entrypoint (CORS & ValidationPipe with whitelist: true)
+│       ├── app.module.ts         # Root module (Throttler, Prisma, Auth, Genres, Books, Users)
 │       ├── prisma/
 │       │   ├── prisma.service.ts # Injectable PrismaClient wrapper with OnModuleInit
 │       │   └── prisma.module.ts  # @Global() module exporting PrismaService
-│       └── books/
-│           ├── books.module.ts   # Books feature module
-│           ├── books.controller.ts # Route handlers (GET /books, GET /books/:id)
-│           └── books.service.ts  # Business logic & Prisma queries
-└── README.md                     # Documentation, schema reflections, and guide
+│       ├── auth/
+│       │   ├── auth.controller.ts # POST /auth/register, POST /auth/login (rate-limited)
+│       │   ├── auth.service.ts    # Bcrypt password hashing & JWT token issuance
+│       │   ├── auth.module.ts     # Configures Passport & JwtModule
+│       │   ├── jwt.strategy.ts    # Passport JWT strategy verifying Bearer tokens
+│       │   ├── jwt-auth.guard.ts  # JwtAuthGuard extending AuthGuard('jwt')
+│       │   ├── roles.decorator.ts # @Roles() metadata decorator
+│       │   ├── roles.guard.ts     # RolesGuard checking req.user.role via Reflector
+│       │   └── dto/               # RegisterDto and LoginDto with class-validator
+│       ├── genres/
+│       │   ├── genres.controller.ts # Full CRUD: GET public, POST/PATCH/DELETE librarian-guarded
+│       │   ├── genres.service.ts    # CRUD operations with relational integrity checks
+│       │   ├── genres.module.ts     # Module declaration
+│       │   └── dto/                 # CreateGenreDto and UpdateGenreDto
+│       ├── books/
+│       │   ├── books.controller.ts  # GET query-filtered & paginated; POST/PATCH/DELETE guarded
+│       │   ├── books.service.ts     # Multi-field search, genre filtering & skip/take pagination
+│       │   ├── books.module.ts      # Module declaration
+│       │   └── dto/                 # CreateBookDto and UpdateBookDto with validation
+│       └── users/
+│           ├── users.controller.ts  # GET /users/profile using @Req() (Stretch Goal)
+│           ├── users.service.ts     # User profile and review retrieval
+│           └── users.module.ts      # Module declaration
+├── docs/
+│   └── postman_collection.json   # Full Postman Collection testing all Week 2 endpoints
+└── README.md                     # Documentation, schema reflections, and setup guide
 ```
 
 ---
@@ -63,9 +84,11 @@ Copy `.env.example` to `.env` inside the `api` folder:
 ```bash
 cp .env.example .env
 ```
-Update `DATABASE_URL` with your PostgreSQL database connection string (from Neon, Supabase, or local Postgres):
+Update `DATABASE_URL` with your PostgreSQL database connection string and configure `JWT_SECRET`:
 ```env
 DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=public"
+JWT_SECRET="library-super-secret-jwt-key"
+PORT=3000
 ```
 
 ### 3. Run Prisma Migrations
@@ -75,10 +98,12 @@ npx prisma migrate dev --name init
 ```
 
 ### 4. Seed the Database
-Populate your database with 4 genres, 15 books across those genres, and a sample review:
+Populate your database with 4 genres, 15 books across those genres, and pre-configured accounts:
 ```bash
 npx prisma db seed
 ```
+- **Librarian Account:** `librarian@library.com` / `password123` (`role: LIBRARIAN`)
+- **Patron Account:** `patron@example.com` / `password123` (`role: PATRON`)
 
 ### 5. Start the NestJS API
 ```bash
@@ -88,17 +113,38 @@ The server will start on `http://localhost:3000`.
 
 ---
 
-## 🔌 API Endpoints
+## 🔌 API Endpoints Summary
 
-| Method | Endpoint | Query / Param | Description |
+### Authentication (`/auth`)
+| Method | Endpoint | Access | Description |
 |---|---|---|---|
-| `GET` | `/books` | `?genreId=2` (optional) | Returns all books (or books filtered by genre), including genre & reviews |
-| `GET` | `/books/:id` | `id` (e.g. `/books/1`) | Returns details for a specific book by ID |
+| `POST` | `/auth/register` | Public | Registers a new user (`email`, `password`, optional `role`) |
+| `POST` | `/auth/login` | Public (Throttled) | Validates credentials and returns JWT `accessToken` |
+
+### Genres (`/genres`)
+| Method | Endpoint | Access | Description |
+|---|---|---|---|
+| `GET` | `/genres` | Public | Returns all genres with book count |
+| `GET` | `/genres/:id` | Public | Returns genre details and its books |
+| `POST` | `/genres` | **Librarian** | Creates a new genre with validated slug |
+| `PATCH` | `/genres/:id` | **Librarian** | Updates an existing genre |
+| `DELETE` | `/genres/:id` | **Librarian** | Deletes a genre (if no books attached) |
+
+### Books (`/books`)
+| Method | Endpoint | Access | Description |
+|---|---|---|---|
+| `GET` | `/books` | Public | Search (`?search=Hobbit`), filter (`?genreId=1`), paginate (`?page=1&limit=10`) |
+| `GET` | `/books/:id` | Public | Returns book details with genre and reviews |
+| `POST` | `/books` | **Librarian** | Creates a new book (DTO validated) |
+| `PATCH` | `/books/:id` | **Librarian** | Updates book fields (DTO validated) |
+| `DELETE` | `/books/:id` | **Librarian** | Deletes a book |
+
+### Users Profile (`/users`) — Stretch Goal
+| Method | Endpoint | Access | Description |
+|---|---|---|---|
+| `GET` | `/users/profile` | **Authenticated** | Returns authenticated user's profile and reviews via `@Req()` |
 
 ---
 
-## 🔍 Database Inspection
-To open Prisma Studio and visually inspect your database tables and relations:
-```bash
-npx prisma studio
-```
+## 🧪 Postman Collection
+The complete test suite collection is located at [`docs/postman_collection.json`](file:///c:/Users/user/Documents/Full%20Stack%20Engineering/library-management-system/docs/postman_collection.json). Import it into Postman to run tests against all endpoints with automated Bearer token capture.
