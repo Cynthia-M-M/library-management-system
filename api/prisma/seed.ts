@@ -39,7 +39,28 @@ async function main() {
     ],
   });
 
-  console.log('Database seeded successfully with 4 genres and 15 books!');
+  // Seed sample user and review for Stretch Goal completeness
+  const patron = await prisma.user.create({
+    data: {
+      email: 'patron@example.com',
+      password: 'password123',
+      role: 'PATRON',
+    },
+  });
+
+  const sampleBook = await prisma.book.findFirst({ where: { isbn: '9780547928227' } });
+  if (sampleBook) {
+    await prisma.review.create({
+      data: {
+        rating: 5,
+        comment: 'A masterpiece of classic fantasy storytelling.',
+        bookId: sampleBook.id,
+        userId: patron.id,
+      },
+    });
+  }
+
+  console.log('Database seeded successfully with 4 genres, 15 books, and a sample review!');
 }
 
 main()
