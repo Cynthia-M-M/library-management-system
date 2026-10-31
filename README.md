@@ -4,16 +4,16 @@ A full-stack library management system with book catalog search, genre categoriz
 
 ---
 
-## 🏛 Schema Decisions & Architectural Rationale
+## Schema Decisions
 
-### 1. Why Books Reference Genres via Foreign Keys (Instead of Embedding)
+**Why Books Reference Genres via Foreign Keys (Instead of Embedding)**
 PostgreSQL is a relational database. Unlike a NoSQL document store (like MongoDB) where we might embed genre strings or nested objects directly inside a Book document, relational databases rely on **foreign keys (`genreId`)** linking the `Book` table to a separate `Genre` table.
 
 - **Normalization**: If a genre's title, description, or slug updates, it is modified in a single row in the `Genre` table, and all referencing books instantly reflect the change without data anomalies.
 - **Referential Integrity**: PostgreSQL foreign keys guarantee that no book can reference a non-existent genre (`ON DELETE RESTRICT` or cascade guarantees).
 - **Indexing & Filtering Efficiency**: Indexing an integer foreign key (`genreId`) is substantially faster and uses far less memory than indexing repetitive strings.
 
-### 2. Reflections on Prisma vs. Document Databases (Stretch Requirement)
+**Reflections on Prisma vs. Document Databases (Stretch)**
 Modeling with Prisma and PostgreSQL feels significantly more structured and rigid upfront compared to document-based stores. In a document store, you can freely push varying schemas into collections without migrations. 
 
 However, this upfront schema rigor pays immense dividends in a production TypeScript application:
